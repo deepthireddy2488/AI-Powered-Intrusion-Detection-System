@@ -1,0 +1,35 @@
+# Python virtual environments
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Environment variables
+.env
+
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Frontend build files
+frontend/dist/
+dist/
+build/
+
+# Large datasets
+dataset/raw/
+dataset/processed/
+
+# ML model files
+*.pkl
+*.joblib
+
+# IDE files
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
