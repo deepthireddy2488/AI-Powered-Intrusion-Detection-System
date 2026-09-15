@@ -4,7 +4,7 @@ import Home from "./pages/Home";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
 import ProtectedRoute from "./components/ProtectedRoute";
-
+import ReportDetails from "./pages/ReportDetails";
 import Dashboard from "./pages/Dashboard";
 import Prediction from "./pages/Prediction";
 import LiveMonitoring from "./pages/LiveMonitoring";
@@ -70,6 +70,16 @@ function App() {
             <ProtectedRoute>
               <Layout>
                 <Reports />
+              </Layout>
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/reports/:sessionId"
+          element={
+            <ProtectedRoute>
+              <Layout>
+                <ReportDetails />
               </Layout>
             </ProtectedRoute>
           }

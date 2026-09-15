@@ -33,3 +33,5 @@ dataset/processed/
 # OS files
 .DS_Store
 Thumbs.db
+# Backup ZIP files
+*.zip

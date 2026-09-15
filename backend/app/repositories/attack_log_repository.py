@@ -9,6 +9,8 @@ def create_attack_log(
     destination_ip: str,
     attack_type: str,
     severity: str,
+    user_id: int,
+    session_id: str,
     status: str = "Detected"
 ):
 
@@ -17,6 +19,8 @@ def create_attack_log(
         destination_ip=destination_ip,
         attack_type=attack_type,
         severity=severity,
+        user_id=user_id,
+        session_id=session_id,
         status=status
     )
 
@@ -27,6 +31,8 @@ def create_attack_log(
     print("===================================")
     print("DATABASE INSERT SUCCESS")
     print("ID:", attack_log.id)
+    print("User ID:", attack_log.user_id)
+    print("Session ID:", attack_log.session_id)
     print("Attack:", attack_log.attack_type)
     print("Source:", attack_log.source_ip)
     print("===================================")
@@ -34,10 +40,23 @@ def create_attack_log(
     return attack_log
 
 
-def get_all_attack_logs(db: Session):
+def get_attack_logs_by_user(
+    db: Session,
+    user_id: int,
+    session_id: str = None
+):
+
+    query = db.query(AttackLog).filter(
+        AttackLog.user_id == user_id
+    )
+
+    if session_id:
+        query = query.filter(
+            AttackLog.session_id == session_id
+        )
 
     return (
-        db.query(AttackLog)
+        query
         .order_by(AttackLog.id.desc())
         .all()
     )

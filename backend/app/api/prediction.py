@@ -10,11 +10,19 @@ from app.ml.severity import get_severity
 from app.ml.recommendation import get_recommendation
 from app.ml.load_model import random_forest_model
 
-from app.database.dependencies import get_db
 from app.repositories.prediction_repository import (
     create_prediction,
-    create_predictions_bulk
+    create_predictions_bulk,
+    get_predictions_by_user
 )
+
+from app.repositories.analysis_session_repository import (
+    create_analysis_session,
+    complete_analysis_session
+)
+
+from app.database.dependencies import get_db
+from app.core.dependencies import get_current_user
 
 
 router = APIRouter(
@@ -24,16 +32,35 @@ router = APIRouter(
 
 
 # ==========================================
+# CURRENT USER PREDICTION HISTORY
+# ==========================================
+
+@router.get("/history")
+def get_prediction_history(
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+
+    return get_predictions_by_user(
+        db=db,
+        user_id=current_user.id
+    )
+
+
+# ==========================================
 # SINGLE PREDICTION
 # ==========================================
 
 @router.post("/", response_model=PredictionResponse)
 def predict(
     request: PredictionRequest,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
 
-    attack, confidence = predict_attack(request.features)
+    attack, confidence = predict_attack(
+        request.features
+    )
 
     severity = get_severity(attack)
 
@@ -44,7 +71,8 @@ def predict(
         attack_type=attack,
         severity=severity,
         confidence=float(confidence),
-        recommendation=recommendation
+        recommendation=recommendation,
+        user_id=current_user.id
     )
 
     return {
@@ -62,8 +90,13 @@ def predict(
 @router.post("/csv")
 async def predict_csv(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
+
+    # ==========================================
+    # CHECK FILE
+    # ==========================================
 
     if not file.filename or not file.filename.lower().endswith(".csv"):
 
@@ -74,9 +107,19 @@ async def predict_csv(
 
     try:
 
+        print("===================================")
+        print("CSV PREDICTION STARTED")
+        print("User ID:", current_user.id)
+        print("File:", file.filename)
+        print("===================================")
+
+
+        # ==========================================
+        # READ CSV
+        # ==========================================
+
         print("Reading CSV file...")
 
-        # Read uploaded CSV
         df = pd.read_csv(file.file)
 
         print("Total CSV rows:", len(df))
@@ -89,10 +132,15 @@ async def predict_csv(
 
         if "Label" in df.columns:
 
-            df = df.drop(columns=["Label"])
+            df = df.drop(
+                columns=["Label"]
+            )
 
 
-        # Remove unnamed columns if present
+        # ==========================================
+        # REMOVE UNNAMED COLUMNS
+        # ==========================================
+
         df = df.loc[
             :,
             ~df.columns.str.contains(
@@ -104,27 +152,35 @@ async def predict_csv(
 
 
         # ==========================================
-        # GET EXACT MODEL FEATURE NAMES
+        # GET MODEL FEATURES
         # ==========================================
 
         feature_names = list(
             random_forest_model.feature_names_in_
         )
 
-        print("Model requires features:", len(feature_names))
+        print(
+            "Model requires features:",
+            len(feature_names)
+        )
 
 
-        # Check missing columns
+        # ==========================================
+        # CHECK MISSING COLUMNS
+        # ==========================================
+
         missing_columns = [
             column
             for column in feature_names
             if column not in df.columns
         ]
 
-
         if missing_columns:
 
-            print("Missing columns:", missing_columns)
+            print(
+                "Missing columns:",
+                missing_columns
+            )
 
             return {
                 "status": "error",
@@ -133,7 +189,10 @@ async def predict_csv(
             }
 
 
-        # Keep features in exact training order
+        # ==========================================
+        # KEEP EXACT MODEL FEATURE ORDER
+        # ==========================================
+
         df = df[feature_names]
 
 
@@ -150,6 +209,25 @@ async def predict_csv(
 
 
         # ==========================================
+        # CREATE NEW ANALYSIS SESSION
+        # ==========================================
+
+        analysis_session = create_analysis_session(
+            db=db,
+            user_id=current_user.id,
+            source_type="CSV",
+            name=file.filename
+        )
+
+        session_id = analysis_session.session_id
+
+        print("===================================")
+        print("NEW CSV SESSION CREATED")
+        print("Session ID:", session_id)
+        print("===================================")
+
+
+        # ==========================================
         # START PREDICTION
         # ==========================================
 
@@ -160,8 +238,7 @@ async def predict_csv(
 
         for index, row in df.iterrows():
 
-            # IMPORTANT:
-            # predict_attack expects a dictionary
+            # Convert row to dictionary
             features = row.to_dict()
 
 
@@ -172,7 +249,9 @@ async def predict_csv(
 
 
             # Severity
-            severity = get_severity(attack)
+            severity = get_severity(
+                attack
+            )
 
 
             # Recommendation
@@ -181,7 +260,7 @@ async def predict_csv(
             )
 
 
-            # Add prediction result
+            # Save result
             results.append({
                 "row": int(index) + 1,
                 "attack": attack,
@@ -195,17 +274,29 @@ async def predict_csv(
 
 
         # ==========================================
-        # SAVE ALL RESULTS AT ONCE
+        # SAVE RESULTS WITH SESSION ID
         # ==========================================
 
         print("Saving predictions to database...")
 
         create_predictions_bulk(
             db=db,
-            predictions_data=results
+            predictions_data=results,
+            user_id=current_user.id,
+            session_id=session_id
         )
 
         print("Database saving completed.")
+
+
+        # ==========================================
+        # MARK SESSION AS COMPLETED
+        # ==========================================
+
+        complete_analysis_session(
+            db=db,
+            session_id=session_id
+        )
 
 
         # ==========================================
@@ -226,7 +317,10 @@ async def predict_csv(
         )
 
 
-        # Count attack types
+        # ==========================================
+        # COUNT ATTACK TYPES
+        # ==========================================
+
         attack_counts = {}
 
 
@@ -237,7 +331,10 @@ async def predict_csv(
             if attack != "BENIGN":
 
                 attack_counts[attack] = (
-                    attack_counts.get(attack, 0) + 1
+                    attack_counts.get(
+                        attack,
+                        0
+                    ) + 1
                 )
 
 
@@ -252,27 +349,46 @@ async def predict_csv(
             )
 
 
-        print("Sending response to frontend...")
-
-
         # ==========================================
         # RETURN RESULT
         # ==========================================
 
+        print("===================================")
+        print("CSV PREDICTION COMPLETED")
+        print("Session ID:", session_id)
+        print("Total:", len(results))
+        print("Safe:", safe_traffic)
+        print("Attacks:", attacks_detected)
+        print("===================================")
+
+
         return {
             "status": "success",
+
+            "session_id": session_id,
+
+            "source_type": "CSV",
+
+            "file_name": file.filename,
+
             "total_records": len(results),
+
             "safe_traffic": safe_traffic,
+
             "attacks_detected": attacks_detected,
+
             "highest_attack": highest_attack,
+
             "results": results
         }
 
 
     except Exception as e:
 
-        print("CSV Prediction Error:")
+        print("===================================")
+        print("CSV PREDICTION ERROR")
         print(str(e))
+        print("===================================")
 
         return {
             "status": "error",

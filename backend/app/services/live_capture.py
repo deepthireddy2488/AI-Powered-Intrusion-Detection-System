@@ -27,6 +27,13 @@ flow_packet_counts = {}
 # Controls whether live capture is running
 capture_running = False
 
+# ============================================
+# CURRENT USER / SESSION
+# ============================================
+
+active_user_id = None
+active_session_id = None
+
 
 # ============================================
 # PROCESS PACKET
@@ -36,13 +43,8 @@ def process_packet(packet):
 
     global capture_running
 
-    # Stop processing if capture was stopped
     if not capture_running:
         return
-
-    # ----------------------------------------
-    # Ignore packets without IP
-    # ----------------------------------------
 
     if IP not in packet:
         return
@@ -52,7 +54,6 @@ def process_packet(packet):
     src_ip = ip_layer.src
     dst_ip = ip_layer.dst
 
-
     # ========================================
     # TCP
     # ========================================
@@ -60,7 +61,6 @@ def process_packet(packet):
     if TCP in packet:
 
         protocol = "TCP"
-
         transport = packet[TCP]
 
         src_port = transport.sport
@@ -80,7 +80,6 @@ def process_packet(packet):
             transport.payload
         )
 
-
     # ========================================
     # UDP
     # ========================================
@@ -88,26 +87,21 @@ def process_packet(packet):
     elif UDP in packet:
 
         protocol = "UDP"
-
         transport = packet[UDP]
 
         src_port = transport.sport
         dst_port = transport.dport
 
         flags = ""
-
         header_length = 8
-
         window_size = 0
 
         payload_length = len(
             transport.payload
         )
 
-
     else:
         return
-
 
     # ========================================
     # PACKET INFORMATION
@@ -119,22 +113,17 @@ def process_packet(packet):
         float(packet.time)
     )
 
-
     # ========================================
     # FLOW KEY
     # ========================================
 
     flow_key = tracker.get_flow_key(
-
         src_ip,
         src_port,
-
         dst_ip,
         dst_port,
-
         protocol
     )
-
 
     # ========================================
     # DETERMINE DIRECTION
@@ -143,10 +132,8 @@ def process_packet(packet):
     if flow_key not in flow_directions:
 
         flow_directions[flow_key] = (
-
             src_ip,
             src_port,
-
             dst_ip,
             dst_port
         )
@@ -168,7 +155,6 @@ def process_packet(packet):
         else:
 
             direction = "backward"
-
 
     # ========================================
     # ADD PACKET TO FLOW TRACKER
@@ -201,19 +187,16 @@ def process_packet(packet):
         payload_length=payload_length
     )
 
-
     # ========================================
     # PACKET COUNT
     # ========================================
 
     if flow_key not in flow_packet_counts:
-
         flow_packet_counts[flow_key] = 0
 
     flow_packet_counts[flow_key] += 1
 
     packet_count = flow_packet_counts[flow_key]
-
 
     # ========================================
     # DISPLAY PACKET
@@ -228,18 +211,16 @@ def process_packet(packet):
         f"{direction}"
     )
 
-
     # ========================================
     # PREDICTION EVERY 5 PACKETS
     # ========================================
 
-    if packet_count % 5 != 0:
+    if packet_count % 2 != 0:
         return
-
 
     print()
     print("========================================")
-    print("  5 PACKETS REACHED - AI PREDICTION")
+    print("  2 PACKETS REACHED - AI PREDICTION")
     print("========================================")
 
     print(
@@ -250,14 +231,11 @@ def process_packet(packet):
         f"Packet Count: {packet_count}"
     )
 
-
     # ========================================
     # GET FLOW
     # ========================================
 
-    flow = tracker.get_flow(
-        flow_key
-    )
+    flow = tracker.get_flow(flow_key)
 
     if not flow:
 
@@ -267,19 +245,15 @@ def process_packet(packet):
 
         return
 
-
     print(
         "FLOW RETRIEVED SUCCESSFULLY"
     )
-
 
     # ========================================
     # ORIGINAL FLOW INFORMATION
     # ========================================
 
-    original = flow_directions[
-        flow_key
-    ]
+    original = flow_directions[flow_key]
 
     source_ip = original[0]
     source_port = original[1]
@@ -287,17 +261,13 @@ def process_packet(packet):
     destination_ip = original[2]
     destination_port = original[3]
 
-
     # ========================================
     # PREPARE FEATURE FLOW
     # ========================================
 
     feature_flow = dict(flow)
 
-    feature_flow["dst_port"] = (
-        destination_port
-    )
-
+    feature_flow["dst_port"] = destination_port
 
     # ========================================
     # FEATURE GENERATION AND PREDICTION
@@ -310,11 +280,9 @@ def process_packet(packet):
             "STARTING FEATURE GENERATION..."
         )
 
-
         features = calculate_basic_features(
             feature_flow
         )
-
 
         print(
             "FEATURE GENERATION COMPLETED"
@@ -324,7 +292,6 @@ def process_packet(packet):
             f"Generated feature count: "
             f"{len(features)}"
         )
-
 
         # ====================================
         # FEATURE COUNT CHECK
@@ -347,11 +314,9 @@ def process_packet(packet):
 
             return
 
-
         print(
             "FEATURE COUNT IS CORRECT: 78"
         )
-
 
         # ====================================
         # AI PREDICTION
@@ -362,11 +327,9 @@ def process_packet(packet):
             "STARTING AI PREDICTION..."
         )
 
-
         prediction = predict_attack(
             features
         )
-
 
         print(
             "PREDICTION COMPLETED"
@@ -376,7 +339,6 @@ def process_packet(packet):
             f"Prediction result: {prediction}"
         )
 
-
         # ====================================
         # GENERATE ALERT
         # ====================================
@@ -385,7 +347,6 @@ def process_packet(packet):
         print(
             "GENERATING ALERT..."
         )
-
 
         alert = generate_alert(
 
@@ -402,20 +363,15 @@ def process_packet(packet):
             packet_count=packet_count
         )
 
-
         print(
             "ALERT GENERATED"
         )
-
 
         # ====================================
         # DISPLAY ALERT
         # ====================================
 
-        display_alert(
-            alert
-        )
-
+        display_alert(alert)
 
         # ========================================
         # SAVE RESULT TO DATABASE
@@ -437,6 +393,24 @@ def process_packet(packet):
                 else "Normal"
             )
 
+            # ====================================
+            # IMPORTANT:
+            # Save user + session ownership
+            # ====================================
+
+            if active_user_id is None:
+                print(
+                    "ERROR: No active user ID."
+                )
+
+                return
+
+            if active_session_id is None:
+                print(
+                    "ERROR: No active session ID."
+                )
+
+                return
 
             create_attack_log(
 
@@ -450,14 +424,24 @@ def process_packet(packet):
 
                 severity=severity,
 
-                status=status
-            )
+                status=status,
 
+                user_id=active_user_id,
+
+                session_id=active_session_id
+            )
 
             print(
                 "ATTACK LOG SAVED TO DATABASE"
             )
 
+            print(
+                f"User ID: {active_user_id}"
+            )
+
+            print(
+                f"Session ID: {active_session_id}"
+            )
 
         except Exception as error:
 
@@ -465,11 +449,9 @@ def process_packet(packet):
                 f"ERROR SAVING ATTACK LOG: {error}"
             )
 
-
         finally:
 
             db.close()
-
 
         # ====================================
         # FINAL RESULT
@@ -506,7 +488,6 @@ def process_packet(packet):
         print("===================================")
         print()
 
-
     # ========================================
     # ERROR HANDLING
     # ========================================
@@ -538,12 +519,19 @@ def process_packet(packet):
 
 def start_capture(
     interface=None,
-    timeout=None
+    timeout=None,
+    user_id=None,
+    session_id=None
 ):
 
     global capture_running
+    global active_user_id
+    global active_session_id
 
-    # Do not start twice
+    # ========================================
+    # DO NOT START TWICE
+    # ========================================
+
     if capture_running:
 
         print(
@@ -552,9 +540,14 @@ def start_capture(
 
         return
 
+    # ========================================
+    # SET CURRENT USER + SESSION
+    # ========================================
+
+    active_user_id = user_id
+    active_session_id = session_id
 
     capture_running = True
-
 
     print()
 
@@ -562,6 +555,13 @@ def start_capture(
     print("     AI IDS LIVE PACKET CAPTURE")
     print("===================================")
 
+    print(
+        f"User ID: {active_user_id}"
+    )
+
+    print(
+        f"Session ID: {active_session_id}"
+    )
 
     if interface:
 
@@ -575,13 +575,12 @@ def start_capture(
             "Interface: Default"
         )
 
-
     print(
         "Capturing real packets..."
     )
 
     print(
-        "Prediction every 5 packets "
+        "Prediction every 2 packets "
         "per flow."
     )
 
@@ -591,11 +590,8 @@ def start_capture(
 
     print()
 
-
     try:
 
-        # timeout=None means continuous capture
-        # stop_filter checks capture_running
         sniff(
 
             iface=interface,
@@ -609,7 +605,6 @@ def start_capture(
             stop_filter=lambda packet: not capture_running
         )
 
-
     except KeyboardInterrupt:
 
         print()
@@ -617,7 +612,6 @@ def start_capture(
         print(
             "Capture stopped by user."
         )
-
 
     except Exception as error:
 
@@ -638,10 +632,13 @@ def start_capture(
 
         print("===================================")
 
-
     finally:
 
         capture_running = False
+
+        # Clear active session after capture ends
+        active_user_id = None
+        active_session_id = None
 
         print(
             "Live packet capture stopped."
@@ -662,9 +659,7 @@ def stop_capture():
             "message": "Live capture is not running"
         }
 
-
     capture_running = False
-
 
     print()
 

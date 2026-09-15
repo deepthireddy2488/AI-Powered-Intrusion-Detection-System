@@ -9,6 +9,12 @@ class AttackLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
 
+    # User who owns this record
+    user_id = Column(Integer, nullable=True, index=True)
+
+    # Unique ID for each live monitoring session
+    session_id = Column(String(100), nullable=True, index=True)
+
     source_ip = Column(String(50), nullable=False)
 
     destination_ip = Column(String(50), nullable=False)
@@ -19,4 +25,4 @@ class AttackLog(Base):
 
     status = Column(String(20), default="Detected")
 
-    created_at = Column(DateTime, default=datetime.utcnow) 
+    created_at = Column(DateTime, default=datetime.utcnow)

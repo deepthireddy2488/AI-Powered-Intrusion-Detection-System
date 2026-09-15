@@ -24,7 +24,10 @@ function Login() {
                 email,
                 password
             });
-
+            // Clear any live-monitoring session from a previous login
+            sessionStorage.removeItem(
+                "liveMonitoringSessionId"
+            );
             // Save JWT token
 
             localStorage.setItem(

@@ -97,6 +97,16 @@ function Prediction() {
             // ========================================
 
             setResult(data);
+            if (data.session_id) {
+                sessionStorage.setItem(
+                    "currentAnalysisSessionId",
+                    data.session_id
+                );
+            }
+
+            sessionStorage.removeItem(
+                "liveMonitoringSessionId"
+            );
 
 
             // Save prediction for Dashboard and Reports

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.live_capture import router as live_capture_router
 
+from app.api.live_capture import router as live_capture_router
 from app.api.attack_logs import router as attack_logs_router
 
 from app.database.database import Base, engine
@@ -10,10 +10,11 @@ from app.database.database import Base, engine
 from app.models.user import User
 from app.models.prediction import Prediction
 from app.models.attack_log import AttackLog
+from app.models.analysis_session import AnalysisSession
+from app.api.analysis_sessions import router as analysis_sessions_router
 
 from app.api.auth import router as auth_router
 from app.api.prediction import router as prediction_router
-from app.api.csv_prediction import router as csv_prediction_router
 from app.api.template import router as template_router
 
 
@@ -57,28 +58,35 @@ app.add_middleware(
 # ROUTES
 # ============================================
 
+# Authentication
 app.include_router(
     auth_router,
     prefix="/auth",
     tags=["Authentication"]
 )
+app.include_router(analysis_sessions_router)
 
+# Prediction
+# Includes:
+#   POST /predict/
+#   POST /predict/csv
 app.include_router(
     prediction_router
 )
 
-app.include_router(
-    csv_prediction_router
-)
 
+# Template
 app.include_router(
     template_router
 )
+
 
 # Attack Logs
 app.include_router(
     attack_logs_router
 )
+
+
 # Live Capture
 app.include_router(
     live_capture_router

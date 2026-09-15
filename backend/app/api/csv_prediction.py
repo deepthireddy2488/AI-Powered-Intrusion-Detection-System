@@ -1,106 +1,206 @@
-from fastapi import APIRouter, UploadFile, File
+from fastapi import APIRouter, UploadFile, File, Depends
 import pandas as pd
 import joblib
 from pathlib import Path
 from collections import Counter
 from sqlalchemy.orm import Session
-from fastapi import Depends
 
 from app.database.dependencies import get_db
 from app.repositories.prediction_repository import create_prediction
+from app.core.dependencies import get_current_user
+
 
 router = APIRouter(
     prefix="/predict",
     tags=["CSV Prediction"]
 )
 
-# Project Root
+
+# ==========================================
+# PROJECT ROOT
+# ==========================================
+
 BASE_DIR = Path(__file__).resolve().parents[3]
 
-# ML Models Folder
+
+# ==========================================
+# ML MODELS FOLDER
+# ==========================================
+
 MODEL_DIR = BASE_DIR / "ml" / "models"
 
-# Load Model
-model = joblib.load(MODEL_DIR / "random_forest.pkl")
-label_encoder = joblib.load(MODEL_DIR / "label_encoder.pkl")
-features = joblib.load(MODEL_DIR / "features.pkl")
 
+# ==========================================
+# LOAD MODEL
+# ==========================================
+
+model = joblib.load(
+    MODEL_DIR / "random_forest.pkl"
+)
+
+label_encoder = joblib.load(
+    MODEL_DIR / "label_encoder.pkl"
+)
+
+features = joblib.load(
+    MODEL_DIR / "features.pkl"
+)
+
+
+# ==========================================
+# CSV PREDICTION
+# ==========================================
 
 @router.post("/csv")
 async def predict_csv(
     file: UploadFile = File(...),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
 ):
 
-    # Read uploaded CSV
+    # ==========================================
+    # READ CSV
+    # ==========================================
+
     df = pd.read_csv(file.file)
 
-    # Check required columns
+
+    # ==========================================
+    # CHECK REQUIRED COLUMNS
+    # ==========================================
+
     missing_columns = [
-        col for col in features
+        col
+        for col in features
         if col not in df.columns
     ]
 
+
     if missing_columns:
+
         return {
             "status": "error",
             "missing_columns": missing_columns
         }
 
-    # Arrange columns in the same order used during training
+
+    # ==========================================
+    # ARRANGE FEATURES
+    # ==========================================
+
     X = df[features]
 
-    # Predict
+
+    # ==========================================
+    # PREDICT
+    # ==========================================
+
     predictions = model.predict(X)
 
-    # Convert numeric labels to attack names
-    attack_names = label_encoder.inverse_transform(predictions)
+
+    # ==========================================
+    # CONVERT LABELS TO ATTACK NAMES
+    # ==========================================
+
+    attack_names = label_encoder.inverse_transform(
+        predictions
+    )
+
 
     # Add prediction column
     df["Prediction"] = attack_names
 
-    # Count each prediction
+
+    # ==========================================
+    # COUNT PREDICTIONS
+    # ==========================================
+
     counter = Counter(attack_names)
 
+
     # Safe traffic count
-    safe_count = counter.get("BENIGN", 0)
+    safe_count = counter.get(
+        "BENIGN",
+        0
+    )
+
 
     # Attack count
     attack_count = len(df) - safe_count
 
-    # Highest occurring attack (excluding BENIGN)
+
+    # ==========================================
+    # HIGHEST OCCURRING ATTACK
+    # ==========================================
+
     attack_counter = {
         attack: count
         for attack, count in counter.items()
         if attack != "BENIGN"
     }
 
+
     highest_attack = (
-        max(attack_counter, key=attack_counter.get)
+        max(
+            attack_counter,
+            key=attack_counter.get
+        )
         if attack_counter
         else "None"
     )
 
-    # Create detailed prediction list
+
+    # ==========================================
+    # CREATE DETAILED RESULTS
+    # ==========================================
+
     results = []
 
-    for index, attack in enumerate(attack_names, start=1):
+
+    for index, attack in enumerate(
+        attack_names,
+        start=1
+    ):
 
         if attack == "BENIGN":
+
             severity = "Low"
-            recommendation = "Normal Traffic"
 
-        elif attack in ["DDoS", "DoS Hulk", "DoS GoldenEye"]:
+            recommendation = (
+                "Normal Traffic"
+            )
+
+        elif attack in [
+            "DDoS",
+            "DoS Hulk",
+            "DoS GoldenEye"
+        ]:
+
             severity = "High"
-            recommendation = "Block Source IP Immediately"
 
-        elif attack in ["PortScan", "Bot"]:
+            recommendation = (
+                "Block Source IP Immediately"
+            )
+
+        elif attack in [
+            "PortScan",
+            "Bot"
+        ]:
+
             severity = "Medium"
-            recommendation = "Investigate Network Activity"
+
+            recommendation = (
+                "Investigate Network Activity"
+            )
 
         else:
+
             severity = "Medium"
-            recommendation = "Review Security Logs"
+
+            recommendation = (
+                "Review Security Logs"
+            )
+
 
         results.append({
             "row": index,
@@ -108,13 +208,25 @@ async def predict_csv(
             "severity": severity,
             "recommendation": recommendation
         })
+
+
+        # ==========================================
+        # SAVE WITH CURRENT USER
+        # ==========================================
+
         create_prediction(
             db=db,
             attack_type=attack,
             severity=severity,
             confidence=100.0,
-            recommendation=recommendation
+            recommendation=recommendation,
+            user_id=current_user.id
         )
+
+
+    # ==========================================
+    # RETURN RESPONSE
+    # ==========================================
 
     return {
         "status": "success",

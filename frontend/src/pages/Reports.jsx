@@ -1,341 +1,228 @@
-import { useContext } from "react";
-import { PredictionContext } from "../context/PredictionContext";
-import generateReport from "../utils/generateReport";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../services/api";
 
 function Reports() {
+    const [sessions, setSessions] = useState([]);
+    const [loading, setLoading] = useState(true);
 
-    const context = useContext(PredictionContext);
+    const navigate = useNavigate();
 
-    const predictionData = context?.predictionData;
+    // ==========================================
+    // LOAD ALL USER SESSIONS
+    // ==========================================
 
+    const fetchSessions = async () => {
+        try {
+            const response = await api.get("/analysis-sessions/");
 
-    // ========================================
-    // NO REPORT DATA
-    // ========================================
+            setSessions(
+                Array.isArray(response.data)
+                    ? response.data
+                    : []
+            );
 
-    if (!predictionData) {
+        } catch (error) {
+            console.error(
+                "Error loading analysis sessions:",
+                error
+            );
+        } finally {
+            setLoading(false);
+        }
+    };
 
+    // ==========================================
+    // INITIAL LOAD
+    // ==========================================
+
+    useEffect(() => {
+        fetchSessions();
+    }, []);
+
+    // ==========================================
+    // VIEW SESSION DETAILS
+    // ==========================================
+
+    const viewDetails = (sessionId) => {
+        navigate(`/reports/${sessionId}`);
+    };
+
+    // ==========================================
+    // FORMAT DATE
+    // ==========================================
+
+    const formatDate = (date) => {
+        if (!date) {
+            return "-";
+        }
+
+        return new Date(date).toLocaleString();
+    };
+
+    // ==========================================
+    // LOADING
+    // ==========================================
+
+    if (loading) {
         return (
+            <div className="container-fluid">
+                <div className="text-center p-5">
+                    <div
+                        className="spinner-border text-primary"
+                        role="status"
+                    ></div>
 
-            <div className="container mt-4">
-
-                <h2 className="fw-bold">
-                    Reports
-                </h2>
-
-                <div className="alert alert-info mt-4">
-
-                    No prediction report available yet.
-
-                    <br />
-
-                    Please go to <strong>AI Prediction</strong> and
-                    upload a CSV file first.
-
+                    <p className="text-muted mt-3">
+                        Loading security reports...
+                    </p>
                 </div>
-
             </div>
-
         );
     }
 
-
-    // ========================================
-    // ATTACK DISTRIBUTION
-    // ========================================
-
-    const attackCounts = {};
-
-    if (Array.isArray(predictionData.results)) {
-
-        predictionData.results.forEach((item) => {
-
-            const attack = item.attack;
-
-            attackCounts[attack] =
-                (attackCounts[attack] || 0) + 1;
-
-        });
-
-    }
-
+    // ==========================================
+    // UI
+    // ==========================================
 
     return (
+        <div className="container-fluid">
 
-        <div className="container mt-4">
+            {/* ====================================
+                TITLE
+            ===================================== */}
 
-            {/* ========================================
-                HEADER
-            ======================================== */}
+            <div className="mb-4">
+                <h2 className="fw-bold">
+                    Security Reports
+                </h2>
 
-            <div className="d-flex justify-content-between align-items-center mb-4">
-
-                <div>
-
-                    <h2 className="fw-bold">
-                        Security Reports
-                    </h2>
-
-                    <p className="text-muted">
-                        AI-powered intrusion detection prediction report
-                    </p>
-
-                </div>
-
-
-                <button
-                    className="btn btn-success"
-                    onClick={() => generateReport(predictionData)}
-                >
-                    📄 Download PDF
-                </button>
-
+                <p className="text-muted">
+                    View all CSV prediction and live monitoring sessions
+                </p>
             </div>
 
 
-            {/* ========================================
-                SUMMARY CARDS
-            ======================================== */}
+            {/* ====================================
+                NO REPORTS
+            ===================================== */}
 
-            <div className="row">
+            {sessions.length === 0 ? (
 
-                <div className="col-md-3 mb-4">
+                <div className="card shadow-sm">
+                    <div className="card-body text-center p-5">
 
-                    <div className="card shadow border-0 text-center">
-
-                        <div className="card-body">
-
-                            <h6 className="text-muted">
-                                Total Records
-                            </h6>
-
-                            <h2 className="fw-bold">
-                                {predictionData.total_records}
-                            </h2>
-
+                        <div
+                            style={{
+                                fontSize: "50px"
+                            }}
+                        >
+                            🛡️
                         </div>
 
-                    </div>
-
-                </div>
-
-
-                <div className="col-md-3 mb-4">
-
-                    <div className="card shadow border-0 text-center">
-
-                        <div className="card-body">
-
-                            <h6 className="text-muted">
-                                Safe Traffic
-                            </h6>
-
-                            <h2 className="text-success fw-bold">
-                                {predictionData.safe_traffic}
-                            </h2>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-
-                <div className="col-md-3 mb-4">
-
-                    <div className="card shadow border-0 text-center">
-
-                        <div className="card-body">
-
-                            <h6 className="text-muted">
-                                Attacks Detected
-                            </h6>
-
-                            <h2 className="text-danger fw-bold">
-                                {predictionData.attacks_detected}
-                            </h2>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-
-                <div className="col-md-3 mb-4">
-
-                    <div className="card shadow border-0 text-center">
-
-                        <div className="card-body">
-
-                            <h6 className="text-muted">
-                                Highest Attack
-                            </h6>
-
-                            <h5 className="text-danger fw-bold mt-2">
-                                {predictionData.highest_attack || "None"}
-                            </h5>
-
-                        </div>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-            {/* ========================================
-                ATTACK DISTRIBUTION
-            ======================================== */}
-
-            <div className="card shadow border-0 mb-4">
-
-                <div className="card-header bg-dark text-white">
-
-                    <h5 className="mb-0">
-                        Attack Distribution
-                    </h5>
-
-                </div>
-
-
-                <div className="card-body">
-
-                    {Object.keys(attackCounts).length === 0 ? (
+                        <h5 className="mt-3">
+                            No security reports available
+                        </h5>
 
                         <p className="text-muted mb-0">
-                            No prediction data available.
+                            Upload a CSV file or start live monitoring
+                            to create a report.
                         </p>
 
-                    ) : (
+                    </div>
+                </div>
 
-                        <div className="row">
+            ) : (
 
-                            {Object.entries(attackCounts).map(
-                                ([attack, count]) => (
+                /* ==================================
+                   SESSION CARDS
+                ================================== */
 
-                                    <div
-                                        className="col-md-3 mb-3"
-                                        key={attack}
+                <div className="row">
+
+                    {sessions.map((session) => (
+
+                        <div
+                            className="col-md-6 col-lg-4 mb-4"
+                            key={session.session_id}
+                        >
+
+                            <div className="card shadow-sm h-100">
+
+                                {/* HEADER */}
+
+                                <div className="card-header d-flex justify-content-between align-items-center">
+
+                                    <strong>
+                                        {session.source_type === "CSV"
+                                            ? "📄 CSV Prediction"
+                                            : "🛡️ Live Monitoring"}
+                                    </strong>
+
+                                    <span
+                                        className={
+                                            session.source_type === "CSV"
+                                                ? "badge bg-primary"
+                                                : "badge bg-success"
+                                        }
                                     >
+                                        {session.source_type}
+                                    </span>
 
-                                        <div className="border rounded p-3 text-center">
+                                </div>
 
-                                            <h6 className="text-muted">
-                                                {attack}
-                                            </h6>
 
-                                            <h3 className={
-                                                attack === "BENIGN"
-                                                    ? "text-success"
-                                                    : "text-danger"
-                                            }>
-                                                {count}
-                                            </h3>
+                                {/* BODY */}
 
-                                        </div>
+                                <div className="card-body">
 
-                                    </div>
+                                    <h5 className="card-title mb-3">
+                                        {session.name ||
+                                            (session.source_type === "CSV"
+                                                ? "CSV Analysis"
+                                                : "Live Monitoring")}
+                                    </h5>
 
-                                )
-                            )}
+
+                                    <p className="text-muted small mb-2">
+                                        <strong>Started:</strong>{" "}
+                                        {formatDate(
+                                            session.created_at
+                                        )}
+                                    </p>
+
+
+                                    <p className="text-muted small mb-3">
+                                        <strong>Completed:</strong>{" "}
+                                        {formatDate(
+                                            session.completed_at
+                                        )}
+                                    </p>
+
+
+                                    <button
+                                        className="btn btn-primary w-100"
+                                        onClick={() =>
+                                            viewDetails(
+                                                session.session_id
+                                            )
+                                        }
+                                    >
+                                        View Details
+                                    </button>
+
+                                </div>
+
+                            </div>
 
                         </div>
 
-                    )}
+                    ))}
 
                 </div>
-
-            </div>
-
-
-            {/* ========================================
-                PREDICTION TABLE
-            ======================================== */}
-
-            <div className="card shadow">
-
-                <div className="card-header">
-
-                    <h5 className="mb-0">
-                        Prediction Report
-                    </h5>
-
-                </div>
-
-
-                <div className="card-body">
-
-                    <div className="table-responsive">
-
-                        <table className="table table-bordered table-hover">
-
-                            <thead className="table-dark">
-
-                                <tr>
-
-                                    <th>Row</th>
-                                    <th>Attack Type</th>
-                                    <th>Severity</th>
-                                    <th>Recommendation</th>
-
-                                </tr>
-
-                            </thead>
-
-
-                            <tbody>
-
-                                {Array.isArray(predictionData.results) &&
-                                    predictionData.results.map((item) => (
-
-                                        <tr key={item.row}>
-
-                                            <td>
-                                                {item.row}
-                                            </td>
-
-                                            <td>
-                                                {item.attack}
-                                            </td>
-
-                                            <td>
-
-                                                <span
-                                                    className={
-                                                        item.severity === "High"
-                                                            ? "text-danger fw-bold"
-                                                            : item.severity === "Medium"
-                                                                ? "text-warning fw-bold"
-                                                                : "text-success fw-bold"
-                                                    }
-                                                >
-                                                    {item.severity}
-                                                </span>
-
-                                            </td>
-
-                                            <td>
-                                                {item.recommendation}
-                                            </td>
-
-                                        </tr>
-
-                                    ))}
-
-                            </tbody>
-
-                        </table>
-
-                    </div>
-
-                </div>
-
-            </div>
+            )}
 
         </div>
-
     );
 }
 
