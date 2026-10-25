@@ -435,3 +435,49 @@ class FlowTracker:
     def get_all_flows(self):
 
         return self.flows
+    # ====================================================
+    # FLOW LIFECYCLE MANAGEMENT
+    # ====================================================
+
+    def remove_flow(self, key):
+        """Remove a flow and its accumulated packet statistics, if present."""
+        self.flows.pop(key, None)
+
+    def clear(self):
+        """Discard every flow. Called between monitoring sessions."""
+        self.flows.clear()
+
+    def expire_stale_flows(
+        self,
+        now=None,
+        idle_timeout_seconds=60,
+        max_age_seconds=300,
+    ):
+        """Return and remove idle/over-age flows to bound memory use.
+
+        A flow expires if it has been idle for `idle_timeout_seconds` or has
+        exceeded `max_age_seconds`. The next packet for that 5-tuple begins a
+        fresh measurement window. `now` should use the same datetime basis as
+        the packet timestamps stored in this tracker.
+        """
+        from datetime import datetime
+
+        now = now or datetime.now()
+        expired_keys = []
+
+        for key, flow in list(self.flows.items()):
+            started = flow.get("start_time")
+            last_seen = flow.get("last_time")
+            if started is None or last_seen is None:
+                expired_keys.append(key)
+                continue
+
+            idle_seconds = (now - last_seen).total_seconds()
+            age_seconds = (now - started).total_seconds()
+            if idle_seconds >= idle_timeout_seconds or age_seconds >= max_age_seconds:
+                expired_keys.append(key)
+
+        for key in expired_keys:
+            self.flows.pop(key, None)
+
+        return expired_keys

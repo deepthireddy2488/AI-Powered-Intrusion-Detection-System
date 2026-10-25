@@ -1,138 +1,55 @@
-import { Link, useNavigate } from "react-router-dom";
-
+import { NavLink, useNavigate } from "react-router-dom";
+import "./Sidebar.css";
 import {
-  FaShieldAlt,
-  FaChartPie,
-  FaRobot,
-  FaUpload,
-  FaBroadcastTower,
-  FaFileAlt,
-  FaSignOutAlt
+    FaBroadcastTower,
+    FaChartPie,
+    FaFileAlt,
+    FaProjectDiagram,
+    FaRobot,
+    FaShieldAlt,
+    FaSignOutAlt,
+    FaStream,
 } from "react-icons/fa";
 
 function Sidebar() {
+    const navigate = useNavigate();
 
-  const navigate = useNavigate();
+    const logout = () => {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("token"); // cleanup for older local builds
+        sessionStorage.removeItem("currentAnalysisSessionId");
+        sessionStorage.removeItem("liveMonitoringSessionId");
+        navigate("/login", { replace: true });
+    };
 
-  const logout = () => {
+    const navClass = ({ isActive }) => `ids-side-link${isActive ? " active" : ""}`;
 
-    localStorage.removeItem("token");
+    return (
+        <aside className="ids-sidebar">
+            <div className="ids-sidebar-brand">
+                <div className="ids-brand-mark"><FaShieldAlt /></div>
+                <div className="ids-brand-title">AI <span>IDS</span></div>
+                <div className="ids-brand-caption">INTRUSION DETECTION SYSTEM</div>
+            </div>
 
-    navigate("/login");
+            <div className="ids-sidebar-section-label">WORKSPACE</div>
+            <nav className="ids-side-nav" aria-label="Main navigation">
+                <NavLink to="/dashboard" className={navClass}><FaChartPie /><span>Dashboard</span></NavLink>
+                <NavLink to="/prediction" className={navClass}><FaRobot /><span>AI Prediction</span></NavLink>
+                <NavLink to="/live" className={navClass}><FaBroadcastTower /><span>Live Monitoring</span></NavLink>
+                <NavLink to="/reports" className={navClass}><FaFileAlt /><span>Security Reports</span></NavLink>
+                <NavLink to="/timeline" className={navClass}><FaStream /><span>Threat Timeline</span><span className="ids-nav-new">NEW</span></NavLink>
+            </nav>
 
-  };
-
-  return (
-
-    <div
-      className="bg-dark text-white d-flex flex-column shadow"
-      style={{
-        width: "260px",
-        minHeight: "100vh"
-      }}
-    >
-
-      <div className="text-center py-4 border-bottom">
-
-        <FaShieldAlt
-          size={45}
-          className="text-info mb-2"
-        />
-
-        <h4>
-          AI IDS
-        </h4>
-
-        <small className="text-secondary">
-          Intrusion Detection System
-        </small>
-
-      </div>
-
-      <ul className="nav flex-column p-3">
-
-        <li className="nav-item mb-2">
-
-          <Link
-            className="nav-link text-white"
-            to="/dashboard"
-          >
-
-            <FaChartPie className="me-2" />
-
-            Dashboard
-
-          </Link>
-
-        </li>
-
-        <li className="nav-item mb-2">
-
-          <Link
-            className="nav-link text-white"
-            to="/prediction"
-          >
-
-            <FaRobot className="me-2" />
-
-            AI Prediction
-
-          </Link>
-
-        </li>
-
-
-        <li className="nav-item mb-2">
-
-          <Link
-            className="nav-link text-white"
-            to="/live"
-          >
-
-            <FaBroadcastTower className="me-2" />
-
-            Live Monitoring
-
-          </Link>
-
-        </li>
-
-        <li className="nav-item mb-2">
-
-          <Link
-            className="nav-link text-white"
-            to="/reports"
-          >
-
-            <FaFileAlt className="me-2" />
-
-            Reports
-
-          </Link>
-
-        </li>
-
-      </ul>
-
-      <div className="mt-auto p-3">
-
-        <button
-          onClick={logout}
-          className="btn btn-danger w-100"
-        >
-
-          <FaSignOutAlt className="me-2" />
-
-          Logout
-
-        </button>
-
-      </div>
-
-    </div>
-
-  );
-
+            <div className="ids-sidebar-bottom">
+                <div className="ids-sidebar-status"><span /> SESSION-AWARE MONITORING</div>
+                <button type="button" onClick={logout} className="ids-logout-button">
+                    <FaSignOutAlt /><span>Sign out</span>
+                </button>
+                <div className="ids-sidebar-version"><FaProjectDiagram /> AI · ML · NETWORK SECURITY</div>
+            </div>
+        </aside>
+    );
 }
 
 export default Sidebar;

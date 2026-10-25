@@ -1,69 +1,51 @@
-from fastapi import APIRouter, Depends, UploadFile, File
+from io import BytesIO
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-import pandas as pd
-import numpy as np
-
-from app.schemas.prediction import PredictionRequest, PredictionResponse
-from app.ml.prediction import predict_attack
-from app.ml.severity import get_severity
-from app.ml.recommendation import get_recommendation
+from app.core.dependencies import get_current_user
+from app.database.dependencies import get_db
 from app.ml.load_model import random_forest_model
-
+from app.ml.prediction import predict_attack
+from app.ml.recommendation import get_recommendation
+from app.ml.severity import get_severity
+from app.repositories.analysis_session_repository import (
+    complete_analysis_session,
+    create_analysis_session,
+)
 from app.repositories.prediction_repository import (
     create_prediction,
     create_predictions_bulk,
-    get_predictions_by_user
+    get_predictions_by_user,
 )
+from app.schemas.prediction import PredictionRequest, PredictionResponse
 
-from app.repositories.analysis_session_repository import (
-    create_analysis_session,
-    complete_analysis_session
-)
+router = APIRouter(prefix="/predict", tags=["Prediction"])
 
-from app.database.dependencies import get_db
-from app.core.dependencies import get_current_user
+# Protect the API from accidental or malicious oversized uploads.
+MAX_CSV_SIZE_BYTES = 50 * 1024 * 1024
+MAX_CSV_ROWS = 100_000
 
-
-router = APIRouter(
-    prefix="/predict",
-    tags=["Prediction"]
-)
-
-
-# ==========================================
-# CURRENT USER PREDICTION HISTORY
-# ==========================================
 
 @router.get("/history")
 def get_prediction_history(
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
+    return get_predictions_by_user(db=db, user_id=current_user.id)
 
-    return get_predictions_by_user(
-        db=db,
-        user_id=current_user.id
-    )
-
-
-# ==========================================
-# SINGLE PREDICTION
-# ==========================================
 
 @router.post("/", response_model=PredictionResponse)
 def predict(
     request: PredictionRequest,
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
-
-    attack, confidence = predict_attack(
-        request.features
-    )
-
+    attack, confidence = predict_attack(request.features)
     severity = get_severity(attack)
-
     recommendation = get_recommendation(attack)
 
     create_prediction(
@@ -72,325 +54,145 @@ def predict(
         severity=severity,
         confidence=float(confidence),
         recommendation=recommendation,
-        user_id=current_user.id
+        user_id=current_user.id,
     )
-
     return {
         "attack_type": attack,
         "severity": severity,
         "confidence": float(confidence),
-        "recommendation": recommendation
+        "recommendation": recommendation,
     }
 
-
-# ==========================================
-# CSV FILE PREDICTION
-# ==========================================
 
 @router.post("/csv")
 async def predict_csv(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user=Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
-
-    # ==========================================
-    # CHECK FILE
-    # ==========================================
-
     if not file.filename or not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Please upload a CSV file.")
 
-        return {
-            "status": "error",
-            "message": "Please upload a CSV file."
-        }
+    # Read at most one byte over the limit so a large upload is rejected safely.
+    content = await file.read(MAX_CSV_SIZE_BYTES + 1)
+    if len(content) > MAX_CSV_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"CSV file exceeds the {MAX_CSV_SIZE_BYTES // (1024 * 1024)} MB limit.",
+        )
+    if not content:
+        raise HTTPException(status_code=400, detail="The uploaded CSV file is empty.")
+
+    filename = Path(file.filename).name
+    session_id = None
 
     try:
+        df = pd.read_csv(BytesIO(content), nrows=MAX_CSV_ROWS + 1)
+        if df.empty:
+            raise HTTPException(status_code=400, detail="The CSV file contains no data rows.")
+        if len(df) > MAX_CSV_ROWS:
+            raise HTTPException(
+                status_code=413,
+                detail=f"CSV contains more than {MAX_CSV_ROWS:,} rows. Split it into smaller files.",
+            )
 
-        print("===================================")
-        print("CSV PREDICTION STARTED")
-        print("User ID:", current_user.id)
-        print("File:", file.filename)
-        print("===================================")
-
-
-        # ==========================================
-        # READ CSV
-        # ==========================================
-
-        print("Reading CSV file...")
-
-        df = pd.read_csv(file.file)
-
-        print("Total CSV rows:", len(df))
-        print("Total CSV columns:", len(df.columns))
-
-
-        # ==========================================
-        # REMOVE LABEL COLUMN
-        # ==========================================
-
+        # Drop the dataset label: it is a target field, not an input feature.
         if "Label" in df.columns:
+            df = df.drop(columns=["Label"])
+        df = df.loc[:, ~df.columns.astype(str).str.contains("^Unnamed", case=False, na=False)]
 
-            df = df.drop(
-                columns=["Label"]
-            )
-
-
-        # ==========================================
-        # REMOVE UNNAMED COLUMNS
-        # ==========================================
-
-        df = df.loc[
-            :,
-            ~df.columns.str.contains(
-                "^Unnamed",
-                case=False,
-                na=False
-            )
-        ]
-
-
-        # ==========================================
-        # GET MODEL FEATURES
-        # ==========================================
-
-        feature_names = list(
-            random_forest_model.feature_names_in_
-        )
-
-        print(
-            "Model requires features:",
-            len(feature_names)
-        )
-
-
-        # ==========================================
-        # CHECK MISSING COLUMNS
-        # ==========================================
-
-        missing_columns = [
-            column
-            for column in feature_names
-            if column not in df.columns
-        ]
-
+        feature_names = list(random_forest_model.feature_names_in_)
+        missing_columns = [name for name in feature_names if name not in df.columns]
         if missing_columns:
-
-            print(
-                "Missing columns:",
-                missing_columns
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "CSV is missing required model feature columns.",
+                    "missing_columns": missing_columns,
+                },
             )
 
-            return {
-                "status": "error",
-                "message": "CSV is missing required columns.",
-                "missing_columns": missing_columns
-            }
+        # Preserve the exact training feature order and clean invalid numeric values.
+        df = df[feature_names].apply(pd.to_numeric, errors="coerce")
+        df = df.replace([np.inf, -np.inf], np.nan)
+        invalid_cells = int(df.isna().sum().sum())
+        if invalid_cells:
+            # Retain compatibility with previously tested uploads while recording
+            # how much input cleaning occurred in the response.
+            df = df.fillna(0)
 
+        results = []
+        for row_index, row in enumerate(df.itertuples(index=False, name=None), start=1):
+            features = dict(zip(feature_names, row))
+            attack, confidence = predict_attack(features)
+            results.append({
+                "row": row_index,
+                "attack": attack,
+                "severity": get_severity(attack),
+                "confidence": float(confidence),
+                "recommendation": get_recommendation(attack),
+            })
 
-        # ==========================================
-        # KEEP EXACT MODEL FEATURE ORDER
-        # ==========================================
-
-        df = df[feature_names]
-
-
-        # ==========================================
-        # CLEAN DATA
-        # ==========================================
-
-        df = df.replace(
-            [np.inf, -np.inf],
-            0
-        )
-
-        df = df.fillna(0)
-
-
-        # ==========================================
-        # CREATE NEW ANALYSIS SESSION
-        # ==========================================
-
+        # Create the session only after the input has been validated and the
+        # predictions have completed, avoiding empty report cards for bad files.
         analysis_session = create_analysis_session(
             db=db,
             user_id=current_user.id,
             source_type="CSV",
-            name=file.filename
+            name=filename,
         )
-
         session_id = analysis_session.session_id
-
-        print("===================================")
-        print("NEW CSV SESSION CREATED")
-        print("Session ID:", session_id)
-        print("===================================")
-
-
-        # ==========================================
-        # START PREDICTION
-        # ==========================================
-
-        print("Starting predictions...")
-
-        results = []
-
-
-        for index, row in df.iterrows():
-
-            # Convert row to dictionary
-            features = row.to_dict()
-
-
-            # AI model prediction
-            attack, confidence = predict_attack(
-                features
-            )
-
-
-            # Severity
-            severity = get_severity(
-                attack
-            )
-
-
-            # Recommendation
-            recommendation = get_recommendation(
-                attack
-            )
-
-
-            # Save result
-            results.append({
-                "row": int(index) + 1,
-                "attack": attack,
-                "severity": severity,
-                "confidence": float(confidence),
-                "recommendation": recommendation
-            })
-
-
-        print("Predictions completed.")
-
-
-        # ==========================================
-        # SAVE RESULTS WITH SESSION ID
-        # ==========================================
-
-        print("Saving predictions to database...")
 
         create_predictions_bulk(
             db=db,
             predictions_data=results,
             user_id=current_user.id,
-            session_id=session_id
+            session_id=session_id,
         )
-
-        print("Database saving completed.")
-
-
-        # ==========================================
-        # MARK SESSION AS COMPLETED
-        # ==========================================
-
         complete_analysis_session(
             db=db,
-            session_id=session_id
+            session_id=session_id,
+            user_id=current_user.id,
         )
 
-
-        # ==========================================
-        # CALCULATE SUMMARY
-        # ==========================================
-
-        safe_traffic = sum(
-            1
-            for item in results
-            if item["attack"] == "BENIGN"
-        )
-
-
-        attacks_detected = sum(
-            1
-            for item in results
-            if item["attack"] != "BENIGN"
-        )
-
-
-        # ==========================================
-        # COUNT ATTACK TYPES
-        # ==========================================
-
+        safe_traffic = sum(item["attack"] == "BENIGN" for item in results)
+        attacks_detected = len(results) - safe_traffic
         attack_counts = {}
-
-
         for item in results:
-
-            attack = item["attack"]
-
-            if attack != "BENIGN":
-
-                attack_counts[attack] = (
-                    attack_counts.get(
-                        attack,
-                        0
-                    ) + 1
-                )
-
-
-        highest_attack = "None"
-
-
-        if attack_counts:
-
-            highest_attack = max(
-                attack_counts,
-                key=attack_counts.get
-            )
-
-
-        # ==========================================
-        # RETURN RESULT
-        # ==========================================
-
-        print("===================================")
-        print("CSV PREDICTION COMPLETED")
-        print("Session ID:", session_id)
-        print("Total:", len(results))
-        print("Safe:", safe_traffic)
-        print("Attacks:", attacks_detected)
-        print("===================================")
-
+            if item["attack"] != "BENIGN":
+                attack_counts[item["attack"]] = attack_counts.get(item["attack"], 0) + 1
+        highest_attack = max(attack_counts, key=attack_counts.get) if attack_counts else "None"
 
         return {
             "status": "success",
-
             "session_id": session_id,
-
             "source_type": "CSV",
-
-            "file_name": file.filename,
-
+            "file_name": filename,
             "total_records": len(results),
-
             "safe_traffic": safe_traffic,
-
             "attacks_detected": attacks_detected,
-
             "highest_attack": highest_attack,
-
-            "results": results
+            "cleaned_invalid_cells": invalid_cells,
+            "results": results,
         }
 
-
-    except Exception as e:
-
-        print("===================================")
-        print("CSV PREDICTION ERROR")
-        print(str(e))
-        print("===================================")
-
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as error:
+        db.rollback()
+        if session_id:
+            try:
+                complete_analysis_session(
+                    db=db,
+                    session_id=session_id,
+                    user_id=current_user.id,
+                )
+            except Exception:
+                db.rollback()
+        # Detailed stack traces remain in the server logs, not in the response.
+        print(f"CSV prediction failed for user {current_user.id}: {type(error).__name__}: {error}")
+        raise HTTPException(
+            status_code=500,
+            detail="CSV prediction failed. Check the backend logs for details.",
+        ) from error

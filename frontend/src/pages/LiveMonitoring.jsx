@@ -2,89 +2,47 @@ import { useEffect, useState } from "react";
 import api from "../services/api";
 import generateLiveReport from "../utils/generateLiveReport";
 
-
 function LiveMonitoring() {
-
     const [isMonitoring, setIsMonitoring] = useState(false);
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(false);
     const [initialLoading, setInitialLoading] = useState(true);
 
-
-    // ============================================
-    // GET STORED SESSION ID
-    // ============================================
-
-    const getSessionId = () => {
-
-        return sessionStorage.getItem(
-            "liveMonitoringSessionId"
-        );
-
-    };
-
-
-    // ============================================
-    // FETCH SESSION LOGS
-    // ============================================
-
-    const fetchCurrentSessionLogs = async (
-        sessionId = null
-    ) => {
-
+    // Fetch current session logs only
+    const fetchCurrentSessionLogs = async () => {
         try {
-
             const currentSessionId =
-                sessionId || getSessionId();
+                sessionStorage.getItem(
+                    "liveMonitoringSessionId"
+                );
 
             if (!currentSessionId) {
-
                 setLogs([]);
-
                 return;
-
             }
 
             const response = await api.get(
                 `/attack-logs/?session_id=${currentSessionId}`
             );
 
-            setLogs(
-                Array.isArray(response.data)
-                    ? response.data
-                    : []
-            );
-
+            setLogs(response.data || []);
         } catch (error) {
-
             console.error(
-                "Error fetching session logs:",
+                "Error fetching current session logs:",
                 error
             );
-
-            setLogs([]);
-
         }
-
     };
 
-
-    // ============================================
-    // CHECK BACKEND STATUS
-    // ============================================
-
+    // Check monitoring status
     const fetchMonitoringStatus = async () => {
-
         try {
-
             const response = await api.get(
                 "/live-capture/status"
             );
 
             return response.data;
-
         } catch (error) {
-
             console.error(
                 "Error fetching monitoring status:",
                 error
@@ -94,359 +52,235 @@ function LiveMonitoring() {
                 status: "stopped",
                 session_id: null
             };
-
         }
-
     };
 
-
-    // ============================================
-    // INITIAL LOAD
-    // ============================================
-
+    // Load page
     useEffect(() => {
-
         const loadData = async () => {
-
             setInitialLoading(true);
 
             try {
-
                 const statusData =
                     await fetchMonitoringStatus();
-
 
                 const running =
                     statusData.status === "running";
 
-
                 setIsMonitoring(running);
 
-
-                // ------------------------------------
-                // If backend is running
-                // ------------------------------------
-
-                if (
-                    running &&
-                    statusData.session_id
-                ) {
-
+                /*
+                 * If backend says monitoring is running,
+                 * use the backend session ID.
+                 */
+                if (running && statusData.session_id) {
                     sessionStorage.setItem(
                         "liveMonitoringSessionId",
                         statusData.session_id
                     );
                     sessionStorage.setItem(
                         "currentAnalysisSessionId",
-                        newSessionId
-                    );
-
-                    await fetchCurrentSessionLogs(
                         statusData.session_id
                     );
 
-                }
-
-                // ------------------------------------
-                // If backend is stopped
-                //
-                // DO NOT DELETE sessionStorage.
-                //
-                // We want to display the completed
-                // session until a new session starts.
-                // ------------------------------------
-
-                else {
-
-                    const savedSessionId =
-                        getSessionId();
-
-                    if (savedSessionId) {
-
-                        await fetchCurrentSessionLogs(
-                            savedSessionId
+                    // Load only this session's records
+                    try {
+                        const response = await api.get(
+                            `/attack-logs/?session_id=${statusData.session_id}`
                         );
 
-                    } else {
+                        setLogs(response.data || []);
+                    } catch (error) {
+                        console.error(
+                            "Error loading session logs:",
+                            error
+                        );
 
                         setLogs([]);
-
                     }
+                } else {
+                    /*
+                     * Monitoring is stopped.
+                     * Dashboard/Live Monitoring must start
+                     * from zero and must not show old records.
+                     */
+                    sessionStorage.removeItem(
+                        "liveMonitoringSessionId"
+                    );
 
+                    setLogs([]);
                 }
-
             } catch (error) {
-
                 console.error(
                     "Error loading monitoring page:",
                     error
                 );
 
                 setIsMonitoring(false);
-
+                setLogs([]);
             } finally {
-
                 setInitialLoading(false);
-
             }
-
         };
-
 
         loadData();
-
     }, []);
 
-
-    // ============================================
-    // POLLING WHILE MONITORING
-    // ============================================
-
+    // Poll current session logs
     useEffect(() => {
-
         if (!isMonitoring) {
-
             return;
-
         }
 
+        fetchCurrentSessionLogs();
 
         const interval = setInterval(() => {
-
             fetchCurrentSessionLogs();
-
         }, 3000);
 
-
         return () => {
-
             clearInterval(interval);
-
         };
-
     }, [isMonitoring]);
 
-
-    // ============================================
     // START MONITORING
-    // ============================================
-
     const startMonitoring = async () => {
-
         try {
-
             setLoading(true);
 
-
-            // ------------------------------------
-            // Clear previous session from display
-            // ------------------------------------
+            // Clear any previous session
+            sessionStorage.removeItem(
+                "liveMonitoringSessionId"
+            );
+            sessionStorage.removeItem(
+                "currentAnalysisSessionId"
+            );
 
             setLogs([]);
 
-
-            // ------------------------------------
-            // Start new backend session
-            // ------------------------------------
-
+            /*
+             * Backend creates a completely new UUID session.
+             */
             const response = await api.post(
                 "/live-capture/start"
             );
-
 
             console.log(
                 "Live capture start response:",
                 response.data
             );
 
-
             const newSessionId =
                 response.data.session_id;
 
-
             if (!newSessionId) {
-
                 throw new Error(
                     "Backend did not return session_id"
                 );
-
             }
 
-
-            // ------------------------------------
-            // Store NEW session ID
-            // ------------------------------------
-
+            /*
+             * Save the NEW session ID.
+             */
             sessionStorage.setItem(
                 "liveMonitoringSessionId",
                 newSessionId
             );
-
+            sessionStorage.setItem(
+                "currentAnalysisSessionId",
+                newSessionId
+            );
 
             setLogs([]);
-
             setIsMonitoring(true);
-
-
         } catch (error) {
-
             console.error(
                 "Error starting live capture:",
                 error
             );
 
-
             alert(
-                error.response?.data?.detail ||
                 "Failed to start live monitoring."
             );
-
         } finally {
-
             setLoading(false);
-
         }
-
     };
 
-
-    // ============================================
     // STOP MONITORING
-    // ============================================
-
     const stopMonitoring = async () => {
-
         try {
-
             setLoading(true);
-
 
             const response = await api.post(
                 "/live-capture/stop"
             );
-
 
             console.log(
                 "Live capture stop response:",
                 response.data
             );
 
-
-            // ------------------------------------
-            // IMPORTANT
-            //
-            // Keep the session ID.
-            // Do NOT clear it.
-            // ------------------------------------
-
-            if (response.data.session_id) {
-
-                sessionStorage.setItem(
-                    "liveMonitoringSessionId",
-                    response.data.session_id
-                );
-
-            }
-
-
-            // Load the final completed records
-
-            if (response.data.session_id) {
-
-                await fetchCurrentSessionLogs(
-                    response.data.session_id
-                );
-
-            }
-
-
+            /*
+             * Monitoring session is finished.
+             * Records remain permanently in PostgreSQL.
+             *
+             * But Live Monitoring display should reset to 0.
+             */
             setIsMonitoring(false);
+            setLogs([]);
 
-
+            sessionStorage.removeItem(
+                "liveMonitoringSessionId"
+            );
         } catch (error) {
-
             console.error(
                 "Error stopping live capture:",
                 error
             );
 
-
             alert(
-                error.response?.data?.detail ||
                 "Failed to stop live capture."
             );
-
         } finally {
-
             setLoading(false);
-
         }
-
     };
 
+    // Statistics
+    const totalRecords = logs.length;
 
-    // ============================================
-    // STATISTICS
-    // ============================================
+    const safeTraffic = logs.filter(
+        (log) => log.attack_type === "BENIGN"
+    ).length;
 
-    const totalRecords =
-        logs.length;
-
-
-    const safeTraffic =
-        logs.filter(
-            (log) =>
-                log.attack_type === "BENIGN"
-        ).length;
-
-
-    const attacksDetected =
-        logs.filter(
-            (log) =>
-                log.attack_type !== "BENIGN"
-        ).length;
-
+    const attacksDetected = logs.filter(
+        (log) => log.attack_type !== "BENIGN"
+    ).length;
 
     const attackCounts = {};
 
-
     logs.forEach((log) => {
-
         if (log.attack_type !== "BENIGN") {
-
             attackCounts[log.attack_type] =
                 (attackCounts[log.attack_type] || 0) + 1;
-
         }
-
     });
-
 
     const highestAttack =
         Object.keys(attackCounts).length > 0
-
             ? Object.keys(attackCounts).reduce(
                 (a, b) =>
                     attackCounts[a] > attackCounts[b]
                         ? a
                         : b
             )
-
             : "None";
 
-
-    // ============================================
-    // LOADING
-    // ============================================
-
     if (initialLoading) {
-
         return (
-
             <div className="container-fluid">
-
                 <div className="text-center p-5">
-
                     <div
                         className="spinner-border text-primary"
                         role="status"
@@ -455,31 +289,18 @@ function LiveMonitoring() {
                     <p className="text-muted mt-3">
                         Loading monitoring data...
                     </p>
-
                 </div>
-
             </div>
-
         );
-
     }
 
-
-    // ============================================
-    // UI
-    // ============================================
-
     return (
-
         <div className="container-fluid">
 
-
             {/* HEADER */}
-
             <div className="d-flex justify-content-between align-items-center mb-4">
 
                 <div>
-
                     <h2 className="fw-bold">
                         Live Monitoring
                     </h2>
@@ -488,9 +309,7 @@ function LiveMonitoring() {
                         Real-time network traffic and
                         intrusion monitoring
                     </p>
-
                 </div>
-
 
                 <div className="d-flex gap-2">
 
@@ -505,46 +324,34 @@ function LiveMonitoring() {
                         📄 Download PDF
                     </button>
 
-
                     {isMonitoring ? (
-
                         <button
                             type="button"
                             className="btn btn-danger"
                             onClick={stopMonitoring}
                             disabled={loading}
                         >
-
                             {loading
                                 ? "Stopping..."
                                 : "⏹ Stop Monitoring"}
-
                         </button>
-
                     ) : (
-
                         <button
                             type="button"
                             className="btn btn-success"
                             onClick={startMonitoring}
                             disabled={loading}
                         >
-
                             {loading
                                 ? "Starting..."
                                 : "▶ Start Monitoring"}
-
                         </button>
-
                     )}
 
                 </div>
-
             </div>
 
-
             {/* STATUS */}
-
             <div
                 className={
                     isMonitoring
@@ -552,19 +359,14 @@ function LiveMonitoring() {
                         : "alert alert-secondary d-flex align-items-center"
                 }
             >
-
                 <span
                     className="me-2"
-                    style={{
-                        fontSize: "18px"
-                    }}
+                    style={{ fontSize: "18px" }}
                 >
                     {isMonitoring ? "🟢" : "⚪"}
                 </span>
 
-
                 <div>
-
                     <strong>
                         System Status:
                     </strong>{" "}
@@ -572,71 +374,34 @@ function LiveMonitoring() {
                     {isMonitoring
                         ? "Live packet capture is running"
                         : "Monitoring stopped"}
-
                 </div>
-
             </div>
 
-
-            {/* COMPLETED SESSION MESSAGE */}
-
-            {!isMonitoring && logs.length > 0 && (
-
+            {/* CURRENT SESSION INFO */}
+            {!isMonitoring && (
                 <div className="alert alert-info">
-
                     <strong>
-                        Completed Monitoring Session
+                        No active monitoring session.
                     </strong>
 
                     <br />
 
-                    These records belong to your latest
-                    completed live-monitoring session.
+                    Previous monitoring records are stored
+                    permanently in the database and are not
+                    shown here.
 
                     <br />
 
-                    They are permanently stored in the database.
-
-                    <br />
-
-                    Starting a new monitoring session will
-                    create a fresh session and reset the
-                    Dashboard to zero.
-
+                    Click <strong>Start Monitoring</strong> to
+                    begin a new session.
                 </div>
-
             )}
-
-
-            {/* NO SESSION */}
-
-            {!isMonitoring && logs.length === 0 && (
-
-                <div className="alert alert-secondary">
-
-                    <strong>
-                        No monitoring session.
-                    </strong>
-
-                    <br />
-
-                    Click <strong>Start Monitoring</strong>
-                    to begin a new session.
-
-                </div>
-
-            )}
-
 
             {/* STATISTICS */}
-
             <div className="row">
 
-
                 <div className="col-md-3 mb-4">
-
                     <div className="card shadow h-100">
-
                         <div className="card-body text-center">
 
                             <h6 className="text-muted">
@@ -652,16 +417,11 @@ function LiveMonitoring() {
                             </small>
 
                         </div>
-
                     </div>
-
                 </div>
 
-
                 <div className="col-md-3 mb-4">
-
                     <div className="card shadow h-100">
-
                         <div className="card-body text-center">
 
                             <h6 className="text-muted">
@@ -673,16 +433,11 @@ function LiveMonitoring() {
                             </h2>
 
                         </div>
-
                     </div>
-
                 </div>
 
-
                 <div className="col-md-3 mb-4">
-
                     <div className="card shadow h-100">
-
                         <div className="card-body text-center">
 
                             <h6 className="text-muted">
@@ -694,16 +449,11 @@ function LiveMonitoring() {
                             </h2>
 
                         </div>
-
                     </div>
-
                 </div>
 
-
                 <div className="col-md-3 mb-4">
-
                     <div className="card shadow h-100">
-
                         <div className="card-body text-center">
 
                             <h6 className="text-muted">
@@ -715,22 +465,18 @@ function LiveMonitoring() {
                             </h5>
 
                         </div>
-
                     </div>
-
                 </div>
 
             </div>
 
-
             {/* ALERT TABLE */}
-
             <div className="card shadow">
 
                 <div className="card-header bg-dark text-white d-flex justify-content-between align-items-center">
 
                     <span>
-                        🚨 Live Monitoring Security Alerts
+                        🚨 Current Session Security Alerts
                     </span>
 
                     <span className="small">
@@ -738,7 +484,6 @@ function LiveMonitoring() {
                     </span>
 
                 </div>
-
 
                 <div className="card-body">
 
@@ -751,12 +496,12 @@ function LiveMonitoring() {
                             </div>
 
                             <h5 className="mt-3">
-                                No monitoring records
+                                No new monitoring records
                             </h5>
 
                             <p>
                                 Start live monitoring to
-                                analyze network traffic.
+                                analyze new network traffic.
                             </p>
 
                         </div>
@@ -770,7 +515,6 @@ function LiveMonitoring() {
                                 <thead className="table-dark">
 
                                     <tr>
-
                                         <th>ID</th>
                                         <th>Time</th>
                                         <th>Attack Type</th>
@@ -778,11 +522,9 @@ function LiveMonitoring() {
                                         <th>Destination IP</th>
                                         <th>Severity</th>
                                         <th>Status</th>
-
                                     </tr>
 
                                 </thead>
-
 
                                 <tbody>
 
@@ -799,8 +541,7 @@ function LiveMonitoring() {
                                                     ? new Date(
                                                         log.created_at
                                                     ).toLocaleString()
-                                                    : "-"
-                                                }
+                                                    : "-"}
                                             </td>
 
                                             <td className="fw-semibold">
@@ -822,8 +563,8 @@ function LiveMonitoring() {
                                                         log.severity === "High"
                                                             ? "badge bg-danger"
                                                             : log.severity === "Medium"
-                                                                ? "badge bg-warning text-dark"
-                                                                : "badge bg-success"
+                                                            ? "badge bg-warning text-dark"
+                                                            : "badge bg-success"
                                                     }
                                                 >
                                                     {log.severity || "-"}
@@ -862,15 +603,10 @@ function LiveMonitoring() {
                     )}
 
                 </div>
-
             </div>
 
-
         </div>
-
     );
-
 }
-
 
 export default LiveMonitoring;

@@ -1,0 +1,52 @@
+.ids-sidebar {
+    width: 260px;
+    min-width: 260px;
+    min-height: 100vh;
+    height: 100vh;
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    color: #f2f4f7;
+    background: linear-gradient(180deg, #090b0f, #10141a 75%, #090b0e);
+    border-right: 1px solid #2a2f37;
+    box-shadow: 8px 0 28px rgba(0, 0, 0, .16);
+}
+.ids-sidebar-brand { padding: 1.7rem 1.1rem 1.4rem; text-align: center; border-bottom: 1px solid #262b33; }
+.ids-brand-mark { display: grid; place-items: center; margin: 0 auto .6rem; width: 48px; height: 48px; border-radius: 15px; border: 1px solid rgba(245, 197, 24, .45); background: rgba(245, 197, 24, .1); color: #f5c518; font-size: 1.5rem; box-shadow: 0 0 25px rgba(245, 197, 24, .08); }
+.ids-brand-title { font-size: 1.55rem; letter-spacing: -.04em; line-height: 1.2; font-weight: 900; color: #f5f6f7; }
+.ids-brand-title span { color: #f5c518; }
+.ids-brand-caption { margin-top: .38rem; color: #818b99; font-size: .58rem; font-weight: 800; letter-spacing: .13em; }
+.ids-sidebar-section-label { padding: 1.25rem 1.25rem .55rem; color: #6f7986; font-size: .61rem; font-weight: 900; letter-spacing: .16em; }
+.ids-side-nav { display: flex; flex-direction: column; gap: .35rem; padding: .35rem .75rem; }
+.ids-side-link { position: relative; display: flex; align-items: center; gap: .75rem; min-height: 44px; padding: .72rem .8rem; border: 1px solid transparent; border-radius: 10px; text-decoration: none; color: #a8b0bb; font-size: .82rem; font-weight: 700; transition: background .15s ease, color .15s ease, border-color .15s ease; }
+.ids-side-link > svg { width: 16px; font-size: .9rem; color: #7f8996; }
+.ids-side-link:hover { color: #f4f5f6; background: #161b22; }
+.ids-side-link:hover > svg { color: #f5c518; }
+.ids-side-link.active { color: #ffe26b; border-color: rgba(245, 197, 24, .22); background: linear-gradient(90deg, rgba(245, 197, 24, .13), rgba(245, 197, 24, .035)); }
+.ids-side-link.active::before { content: ""; position: absolute; left: -1px; top: 10px; bottom: 10px; width: 3px; background: #f5c518; border-radius: 0 4px 4px 0; }
+.ids-side-link.active > svg { color: #f5c518; }
+.ids-nav-new { margin-left: auto; padding: .15rem .32rem; border-radius: 4px; background: #f5c518; color: #11140d; font-size: .53rem; letter-spacing: .05em; font-weight: 950; }
+.ids-sidebar-bottom { margin-top: auto; padding: .9rem .8rem 1rem; }
+.ids-sidebar-status { display: flex; align-items: center; gap: .48rem; border: 1px solid #2d343d; border-radius: 8px; padding: .6rem .65rem; margin-bottom: .8rem; color: #9da7b3; font-size: .57rem; font-weight: 850; letter-spacing: .055em; }
+.ids-sidebar-status span { flex: 0 0 auto; width: 7px; height: 7px; background: #f5c518; border-radius: 50%; box-shadow: 0 0 9px rgba(245, 197, 24, .5); }
+.ids-logout-button { display: flex; align-items: center; justify-content: center; gap: .65rem; width: 100%; border: 1px solid #343b45; border-radius: 9px; background: #151a21; color: #d7dce2; padding: .7rem; font-size: .8rem; font-weight: 800; }
+.ids-logout-button:hover { color: #ffe16b; border-color: rgba(245, 197, 24, .5); background: #1a1f26; }
+.ids-sidebar-version { display: flex; justify-content: center; align-items: center; gap: .45rem; color: #697482; font-size: .52rem; letter-spacing: .06em; font-weight: 800; margin-top: .95rem; }
+.ids-sidebar-version svg { color: #a88a1b; }
+
+@media (max-width: 900px) {
+    .ids-sidebar { width: 220px; min-width: 220px; }
+}
+@media (max-width: 700px) {
+    .ids-sidebar { width: 72px; min-width: 72px; }
+    .ids-sidebar-brand { padding: 1rem .3rem; }
+    .ids-brand-mark { width: 40px; height: 40px; }
+    .ids-brand-title, .ids-brand-caption, .ids-sidebar-section-label, .ids-side-link span, .ids-sidebar-status, .ids-sidebar-version { display: none; }
+    .ids-side-nav { padding: .5rem; }
+    .ids-side-link { justify-content: center; padding: .8rem .4rem; }
+    .ids-side-link > svg { font-size: 1rem; }
+    .ids-nav-new { display: none !important; }
+    .ids-logout-button span { display: none; }
+}
